@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pkl
+.pytest_cache/
+logs/
+data/*.xlsx
+output/*.png
+output/*.csv
+.coverage
+*.egg-info/
+.venv
