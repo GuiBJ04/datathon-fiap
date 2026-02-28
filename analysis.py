@@ -16,7 +16,7 @@ import pandas as pd
 warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.preprocessing import load_sheets
+from src.preprocessing import load_sheets, create_datasets, _normalize_colname
 from src.utils import load_model, OUTPUT_DIR
 from src.visualize import (
     plot_missing_data,
@@ -24,9 +24,14 @@ from src.visualize import (
     plot_feature_distributions,
     plot_correlation_heatmap,
     plot_feature_importance,
+    plot_idade_boxplot,
+    plot_fase_barplot,
 )
 
 DATA_PATH = "data/BASE_DE_DADOS_PEDE.xlsx"
+
+FASE_MAP = {0: "ALFA", 1: "FASE 1", 2: "FASE 2", 3: "FASE 3",
+            4: "FASE 4", 5: "FASE 5", 6: "FASE 6", 7: "FASE 7", 8: "FASE 8"}
 
 MODEL_FILES = {
     "Random Forest": "random_forest.pkl",
@@ -34,6 +39,41 @@ MODEL_FILES = {
     "Gradient Boosting": "gradient_boosting.pkl",
     "Neural Network": "neural_network.pkl",
 }
+
+
+def _build_raw_dfs(data_22, data_23, data_24):
+    """Extrai DataFrames com idade e fase originais + target defasagem."""
+    training_set, validation_set = create_datasets(data_22, data_23, data_24)
+
+    renames = [
+        {"defas": "defasagem.inicial", "idade.22": "idade"},   # training (2022)
+        {"defasagem": "defasagem.inicial"},                     # validation (2023)
+    ]
+
+    dfs = []
+    for raw, ren in zip([training_set, validation_set], renames):
+        df = raw.copy()
+        df.columns = [_normalize_colname(c) for c in df.columns]
+        df = df.rename(columns=ren)
+
+        # Target binário
+        diff = df["defasagem.final"] - df["defasagem.inicial"]
+        df["defasagem"] = (diff < 0).astype(int)
+        df.loc[diff.isna(), "defasagem"] = pd.NA
+
+        # Idade numérica original
+        df["idade"] = pd.to_numeric(df["idade"], errors="coerce")
+
+        # Fase: converter numérica para label legível, manter strings como estão
+        numeric_fase = pd.to_numeric(df["fase"], errors="coerce")
+        mask = numeric_fase.notna()
+        df.loc[mask, "fase"] = numeric_fase[mask].astype(int).map(FASE_MAP)
+        df["fase"] = df["fase"].astype(str).str.strip()
+
+        dfs.append(df[["idade", "fase", "defasagem"]].dropna())
+
+    print(f"  Raw train: {dfs[0].shape} | Raw val: {dfs[1].shape}")
+    return dfs[0], dfs[1]
 
 
 def main():
@@ -75,6 +115,15 @@ def main():
     plot_correlation_heatmap(df, os.path.join(output, "descritivo_correlacao.png"))
     plot_feature_importance(models, feature_names, X, y,
                             os.path.join(output, "feature_importance.png"))
+
+    # 6. Gráficos com dados originais (idade e fase pré-transformação)
+    print("\n[5] Construindo dados brutos para gráficos de idade e fase...")
+    raw_train, raw_val = _build_raw_dfs(data_22, data_23, data_24)
+
+    plot_idade_boxplot(raw_train, raw_val,
+                       os.path.join(output, "descritivo_idade_boxplot.png"))
+    plot_fase_barplot(raw_train, raw_val,
+                      os.path.join(output, "descritivo_fase_barplot.png"))
 
     print("\n" + "=" * 70)
     print("  ANÁLISE CONCLUÍDA!")

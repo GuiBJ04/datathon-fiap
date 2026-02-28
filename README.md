@@ -370,8 +370,6 @@ A stack de observabilidade inclui:
 
 ### Pre-processamento
 
-O modulo `src/preprocessing.py` converte fielmente o codigo R original (`Descriptive.R`) em 10 etapas:
-
 1. Normalizacao de nomes de colunas (lowercase, sem acentos)
 2. Alinhamento de colunas entre datasets
 3. Criacao do target binario (`defasagem_final - defasagem_inicial < 0`)

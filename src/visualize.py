@@ -248,6 +248,68 @@ def plot_correlation_heatmap(df: pd.DataFrame, filepath: str):
     print(f"  Gráfico: {filepath}")
 
 
+def plot_idade_boxplot(df_train: pd.DataFrame, df_val: pd.DataFrame, filepath: str):
+    """Boxplot de idade (valores originais) por defasagem: Treino vs Validação."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle("Distribuição de Idade por Defasagem", fontsize=16, fontweight="bold")
+
+    for ax, df, title in zip(axes, [df_train, df_val], ["Treino", "Validação"]):
+        data = [df[df["defasagem"] == 0]["idade"].dropna(),
+                df[df["defasagem"] == 1]["idade"].dropna()]
+        bp = ax.boxplot(data, labels=["Não defasou (0)", "Defasou (1)"],
+                        patch_artist=True, widths=0.5)
+        bp["boxes"][0].set_facecolor(COLORS[0])
+        bp["boxes"][1].set_facecolor(COLORS[1])
+        for box in bp["boxes"]:
+            box.set_alpha(0.7)
+        ax.set_title(title, fontsize=14, fontweight="bold")
+        ax.set_ylabel("Idade", fontsize=12)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Gráfico: {filepath}")
+
+
+def plot_fase_barplot(df_train: pd.DataFrame, df_val: pd.DataFrame, filepath: str):
+    """Barplot de proporção de fase por defasagem: Treino vs Validação."""
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.suptitle("Proporção de Fase por Defasagem", fontsize=16, fontweight="bold")
+
+    for ax, df, title in zip(axes, [df_train, df_val], ["Treino", "Validação"]):
+        ct = pd.crosstab(df["fase"], df["defasagem"], normalize="columns") * 100
+        ct = ct.sort_index()
+        x = np.arange(len(ct.index))
+        width = 0.35
+
+        bars0 = ax.bar(x - width / 2, ct[0], width, label="Não defasou (0)",
+                        color=COLORS[0], edgecolor="black", alpha=0.85)
+        bars1 = ax.bar(x + width / 2, ct[1], width, label="Defasou (1)",
+                        color=COLORS[1], edgecolor="black", alpha=0.85)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(ct.index, rotation=30, ha="right", fontsize=10)
+        ax.set_ylabel("Proporção (%)", fontsize=12)
+        ax.set_title(title, fontsize=14, fontweight="bold")
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3, axis="y")
+
+        for bars in [bars0, bars1]:
+            for bar in bars:
+                h = bar.get_height()
+                if h > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2, h + 0.5,
+                            f"{h:.1f}%", ha="center", va="bottom", fontsize=8)
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Gráfico: {filepath}")
+
+
 def plot_feature_importance(models: dict, feature_names: list, X, y, filepath: str):
     """Grid 2x2 com importância de features por modelo."""
     fig, axes = plt.subplots(2, 2, figsize=(16, 14))
