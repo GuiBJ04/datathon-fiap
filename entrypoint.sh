@@ -15,5 +15,10 @@ if [ "$MODE" = "pipeline" ]; then
 
     echo "=== Pipeline concluido! ==="
 else
-    exec uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Garantir que modelos pre-treinados estejam disponiveis
+    echo "Copiando modelos pre-treinados para app/model/..."
+    cp models/*.pkl app/model/ 2>/dev/null || true
+    cp models/*.json app/model/ 2>/dev/null || true
+
+    exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
 fi

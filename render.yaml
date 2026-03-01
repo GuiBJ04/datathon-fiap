@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: passos-magicos-api
+    runtime: docker
+    plan: free
+    envVars:
+      - key: MODE
+        value: api
+    healthCheckPath: /health
