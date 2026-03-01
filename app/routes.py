@@ -1,11 +1,12 @@
 """
-Rotas da API: /predict, /health, /metrics.
+Rotas da API: /predict, /health, /metrics, /models.
 """
 import time
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -18,6 +19,13 @@ from app.metrics import (
 )
 
 router = APIRouter()
+
+
+class ModelName(str, Enum):
+    logistic_regression = "logistic_regression"
+    random_forest = "random_forest"
+    gradient_boosting = "gradient_boosting"
+    neural_network = "neural_network"
 
 
 # =====================================================================
@@ -125,6 +133,11 @@ class PredictionResponse(BaseModel):
         description="Nível de risco: Baixo (< 0.3), Moderado (0.3-0.7) ou Alto (≥ 0.7).",
         examples=["Baixo"],
     )
+    model_name: str = Field(
+        ...,
+        description="Nome do modelo utilizado na predição.",
+        examples=["logistic_regression"],
+    )
     timestamp: str = Field(
         ...,
         description="Data/hora da predição em formato ISO 8601.",
@@ -142,8 +155,13 @@ class HealthResponse(BaseModel):
     )
     model_loaded: bool = Field(
         ...,
-        description="Indica se o modelo ML está carregado em memória.",
+        description="Indica se ao menos um modelo ML está carregado em memória.",
         examples=[True],
+    )
+    models_loaded: int = Field(
+        ...,
+        description="Quantidade de modelos carregados em memória.",
+        examples=[4],
     )
     predictions: int = Field(
         ...,
@@ -219,10 +237,26 @@ def metrics():
 )
 def health(request: Request):
     state = request.app.state.app_state
+    loaded = len(state["models"])
     return {
-        "status": "healthy" if state["model"] else "degraded",
-        "model_loaded": state["model"] is not None,
+        "status": "healthy" if loaded > 0 else "degraded",
+        "model_loaded": loaded > 0,
+        "models_loaded": loaded,
         "predictions": state["prediction_count"],
+    }
+
+
+@router.get(
+    "/models",
+    tags=["Monitoramento"],
+    summary="Modelos disponíveis",
+    description="Lista os modelos de ML carregados e indica qual é o modelo padrão.",
+)
+def list_models(request: Request):
+    state = request.app.state.app_state
+    return {
+        "default": state["default_model"],
+        "available": list(state["models"].keys()),
     }
 
 
@@ -233,7 +267,10 @@ def health(request: Request):
     summary="Predição de defasagem escolar",
     description=(
         "Recebe os dados de um aluno e retorna a predição de defasagem "
-        "escolar utilizando o modelo Gradient Boosting.\n\n"
+        "escolar. Use o query parameter `model` para escolher o modelo "
+        "(padrão: `logistic_regression`).\n\n"
+        "**Modelos disponíveis:** `logistic_regression`, `random_forest`, "
+        "`gradient_boosting`, `neural_network`\n\n"
         "**Fluxo interno:**\n"
         "1. Monta feature vector com one-hot encoding da fase (fase_0 a fase_7)\n"
         "2. Alinha colunas com as features esperadas pelo modelo\n"
@@ -266,12 +303,21 @@ def health(request: Request):
         },
     },
 )
-def predict(student: StudentInput, request: Request):
+def predict(
+    student: StudentInput,
+    request: Request,
+    model: Optional[ModelName] = Query(
+        None,
+        description="Modelo a ser utilizado na predição. Se não informado, usa o modelo padrão (logistic_regression).",
+    ),
+):
     start = time.perf_counter()
     state = request.app.state.app_state
-    if state["model"] is None:
+    model_name = model.value if model else state["default_model"]
+
+    if model_name not in state["models"]:
         prediction_errors_total.inc()
-        raise HTTPException(503, "Modelo não carregado.")
+        raise HTTPException(404, f"Modelo '{model_name}' não disponível.")
 
     try:
         # Montar feature vector com dummies de fase
@@ -289,15 +335,15 @@ def predict(student: StudentInput, request: Request):
         X = pd.DataFrame([features])
 
         # Alinhar colunas com o modelo
-        model = state["model"]
-        if hasattr(model, "feature_names_in_"):
-            for c in model.feature_names_in_:
+        selected_model = state["models"][model_name]
+        if hasattr(selected_model, "feature_names_in_"):
+            for c in selected_model.feature_names_in_:
                 if c not in X.columns:
                     X[c] = 0
-            X = X[model.feature_names_in_]
+            X = X[selected_model.feature_names_in_]
 
-        pred = int(model.predict(X)[0])
-        prob = float(model.predict_proba(X)[0][1])
+        pred = int(selected_model.predict(X)[0])
+        prob = float(selected_model.predict_proba(X)[0][1])
         risk = "Baixo" if prob < 0.3 else ("Moderado" if prob < 0.7 else "Alto")
         label = "Defasado" if pred == 1 else "Não Defasado"
 
@@ -313,6 +359,7 @@ def predict(student: StudentInput, request: Request):
             label=label,
             probability=round(prob, 4),
             risk_level=risk,
+            model_name=model_name,
             timestamp=datetime.now().isoformat(),
         )
     except HTTPException:

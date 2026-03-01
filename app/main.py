@@ -15,13 +15,21 @@ from src.utils import load_model, setup_logger
 
 logger = setup_logger("api")
 
-app_state = {"model": None, "metadata": None, "start_time": None, "prediction_count": 0}
+AVAILABLE_MODELS = ["logistic_regression", "random_forest", "gradient_boosting", "neural_network"]
+DEFAULT_MODEL = "logistic_regression"
+
+app_state = {
+    "models": {},
+    "default_model": DEFAULT_MODEL,
+    "start_time": None,
+    "prediction_count": 0,
+}
 
 API_DESCRIPTION = """
 ## Sobre
 
 API de Machine Learning do projeto **Passos Mágicos** para predição de
-defasagem escolar. Utiliza um modelo Gradient Boosting treinado com dados
+defasagem escolar. Disponibiliza múltiplos modelos treinados com dados
 do programa PEDE (2022-2024) para identificar alunos com risco de
 defasagem.
 
@@ -29,19 +37,26 @@ defasagem.
 
 * **Predição** — Envia dados de um aluno e recebe a probabilidade de
   defasagem, classificação (Defasado / Não Defasado) e nível de risco.
+  É possível escolher o modelo via query parameter `model`.
+* **Modelos** — Endpoint `/models` lista os modelos disponíveis e o
+  modelo padrão.
 * **Monitoramento** — Métricas Prometheus para latência, volume de
   predições, distribuição de probabilidades e status do modelo.
 * **Health Check** — Endpoint para verificação de saúde da aplicação,
   integrado ao Docker `HEALTHCHECK`.
 
-## Modelo
+## Modelos disponíveis
 
-| Item | Valor |
-|------|-------|
-| Algoritmo | Gradient Boosting Classifier |
-| Features | 19 (9 indicadores + gênero + instituição + 8 fases one-hot) |
-| Target | `defasagem` (0 = Não Defasado, 1 = Defasado) |
-| Treino | Dados PEDE 2022 → 2023 |
+| Modelo | Padrão |
+|--------|--------|
+| Logistic Regression | ✅ |
+| Random Forest | |
+| Gradient Boosting | |
+| Neural Network | |
+
+Features: 19 (9 indicadores + gênero + instituição + 8 fases one-hot)
+Target: `defasagem` (0 = Não Defasado, 1 = Defasado)
+Treino: Dados PEDE 2022 → 2023
 
 ## Níveis de Risco
 
@@ -66,15 +81,17 @@ TAGS_METADATA = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        app_state["model"] = load_model("gradient_boosting.pkl")
-        app_state["start_time"] = datetime.now()
-        model_loaded.set(1)
-        model_info.info({"name": "gradient_boosting", "version": "1.0.0"})
-        logger.info("Modelo carregado!")
-    except Exception as e:
-        model_loaded.set(0)
-        logger.warning(f"Falha ao carregar modelo: {e}")
+    for name in AVAILABLE_MODELS:
+        try:
+            app_state["models"][name] = load_model(f"{name}.pkl")
+            logger.info(f"Modelo '{name}' carregado!")
+        except Exception as e:
+            logger.warning(f"Falha ao carregar modelo '{name}': {e}")
+
+    loaded = len(app_state["models"])
+    model_loaded.set(1 if loaded > 0 else 0)
+    model_info.info({"name": DEFAULT_MODEL, "version": "1.0.0", "total_loaded": str(loaded)})
+    app_state["start_time"] = datetime.now()
     yield
 
 
