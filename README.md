@@ -305,26 +305,41 @@ A documentacao interativa da API esta disponivel em:
 
 ## Docker
 
-### Build e execucao da API isolada
+O `docker compose up` executa automaticamente o pipeline de treinamento antes de iniciar a API. O arquivo Excel deve estar em `data/` antes de executar.
+
+### Pre-requisito
 
 ```bash
-docker build -t passos-magicos .
-docker run -p 8000:8000 passos-magicos
+# Colocar o arquivo Excel na pasta data/
+cp BASE_DE_DADOS_PEDE.xlsx data/
 ```
 
-### Stack completa (API + Prometheus + Grafana)
+### Stack completa (Pipeline + API + Prometheus + Grafana)
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-| Servico | Porta | URL |
-|---------|-------|-----|
-| API FastAPI | 8000 | http://localhost:8000 |
-| Prometheus | 9090 | http://localhost:9090 |
-| Grafana | 3000 | http://localhost:3000 |
+O pipeline de ML roda primeiro (treinamento + analise exploratoria). A API so inicia apos o pipeline concluir com sucesso. Os modelos treinados sao compartilhados via volume Docker.
+
+| Servico | Descricao | Porta | URL |
+|---------|-----------|-------|-----|
+| Pipeline | Treinamento dos modelos + analise exploratoria | - | - |
+| API FastAPI | API de predicao | 8000 | http://localhost:8000 |
+| Prometheus | Coleta de metricas | 9090 | http://localhost:9090 |
+| Grafana | Dashboards | 3000 | http://localhost:3000 |
 
 **Credenciais Grafana:** `admin` / `admin`
+
+### Executar apenas o pipeline
+
+```bash
+docker compose run pipeline
+```
+
+Os graficos e CSVs gerados ficam disponiveis em `output/` no host.
+
+### Outros comandos
 
 ```bash
 # Parar todos os servicos

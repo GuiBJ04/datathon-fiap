@@ -1,10 +1,24 @@
 services:
+  pipeline:
+    build: .
+    environment:
+      - MODE=pipeline
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - model_data:/app/app/model
+    networks:
+      - monitoring
+
   api:
     build: .
     ports:
       - "8000:8000"
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
     volumes:
-      - ./app/model:/app/app/model
+      - model_data:/app/app/model
       - ./data:/app/data
     networks:
       - monitoring
@@ -47,3 +61,4 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  model_data:
