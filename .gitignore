@@ -1,6 +1,5 @@
 __pycache__/
 *.pyc
-*.pkl
 .pytest_cache/
 logs/
 output/*.csv
